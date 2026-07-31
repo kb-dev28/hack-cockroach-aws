@@ -1,29 +1,32 @@
 #!/usr/bin/env bash
-# Build a clean AWS Lambda deployment zip for this function.
+# Build a clean AWS Lambda deployment zip for this function (ARM64 / Graviton).
 # Output: lambda/lambda-deploy.zip (never pollutes the repo root)
 #
 # Usage:
 #   ./lambda/build_package.sh
 #   PYTHON_VERSION=3.12 ./lambda/build_package.sh
+#
+# IMPORTANT: Lambda Architectures must be ["arm64"] to match this wheel.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
+PLATFORM="manylinux2014_aarch64"
 BUILD_DIR="${SCRIPT_DIR}/package"
 ZIP_PATH="${SCRIPT_DIR}/lambda-deploy.zip"
 
-echo "==> Cleaning previous build artifacts"
+echo "==> Cleaning previous build artifacts (avoid mixing x86_64 with arm64)"
 rm -rf "${BUILD_DIR}"
 rm -f "${ZIP_PATH}"
 mkdir -p "${BUILD_DIR}"
 
-echo "==> Installing psycopg2-binary (manylinux / Python ${PYTHON_VERSION})"
+echo "==> Installing psycopg2-binary for Lambda ARM64 (${PLATFORM} / Python ${PYTHON_VERSION})"
 pip install \
   --quiet \
   --upgrade \
-  --target "${BUILD_DIR}" \
-  --platform manylinux2014_x86_64 \
+  --platform "${PLATFORM}" \
+  --target="${BUILD_DIR}" \
   --implementation cp \
   --python-version "${PYTHON_VERSION}" \
   --only-binary=:all: \
@@ -32,7 +35,7 @@ pip install \
 echo "==> Copying lambda_function.py"
 cp "${SCRIPT_DIR}/lambda_function.py" "${BUILD_DIR}/lambda_function.py"
 
-echo "==> Creating ${ZIP_PATH}"
+echo "==> Creating ${ZIP_PATH} (modules at zip root, not nested under package/)"
 BUILD_DIR="${BUILD_DIR}" ZIP_PATH="${ZIP_PATH}" python3 - <<'PY'
 import os
 import zipfile
@@ -44,6 +47,10 @@ zip_path = Path(os.environ["ZIP_PATH"])
 with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
     for path in build_dir.rglob("*"):
         if path.is_file():
+            # Write relative to package/ so zip root contains:
+            #   lambda_function.py
+            #   psycopg2/
+            #   ...
             zf.write(path, path.relative_to(build_dir).as_posix())
 
 print(f"Wrote {zip_path} ({zip_path.stat().st_size / 1024:.1f} KB)")
@@ -54,4 +61,6 @@ rm -rf "${BUILD_DIR}"
 
 echo "==> Done. Upload lambda/lambda-deploy.zip to AWS Lambda."
 echo "    Handler: lambda_function.lambda_handler"
-echo "    Runtime tip: match PYTHON_VERSION (default 3.12)"
+echo "    Runtime: Python ${PYTHON_VERSION}"
+echo "    Architecture: arm64 (Graviton)"
+echo "    Confirmed pip platform used: ${PLATFORM}"
