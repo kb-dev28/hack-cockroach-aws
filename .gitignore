@@ -2,6 +2,10 @@
 .env
 .env.*
 
+# Cockroach Cloud CA (download locally; pack into Lambda zip as root.crt)
+cockroach-ca.crt
+*.crt
+
 # Lambda build artifacts
 *.zip
 lambda/package/
