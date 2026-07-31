@@ -1,1 +1,33 @@
-docs/internal
+# Secrets
+.env
+.env.*
+
+# Lambda build artifacts
+*.zip
+lambda/package/
+package/
+
+# Local PostgreSQL / psycopg2 installs (never commit these)
+psycopg2/
+psycopg2*/
+psycopg2_binary*
+psycopg2_binary.*/
+
+# CockroachDB local CLI downloads
+cockroach-sql*
+ccloud
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Internal notes (optional: keep if you want them private)
+docs/internal/

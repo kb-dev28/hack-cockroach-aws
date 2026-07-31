@@ -1,11 +1,9 @@
 import json
 import os
 import re
-import ssl
-from urllib.parse import parse_qs, urlparse
 
 import boto3
-import pg8000.native
+import psycopg2
 
 bedrock = boto3.client(service_name='bedrock-runtime', region_name='us-east-1')
 
@@ -29,61 +27,51 @@ def extract_json(text):
     return json.loads(cleaned)
 
 
-def get_db_connection():
-    database_url = os.environ.get('DATABASE_URL')
-    if not database_url:
+def get_database_url():
+    url = os.environ.get('DATABASE_URL')
+    if not url:
         raise ValueError('DATABASE_URL environment variable is not set')
+    return url
 
-    parsed = urlparse(database_url)
-    if parsed.scheme not in ('postgresql', 'postgres'):
-        raise ValueError('DATABASE_URL must use postgresql:// scheme')
 
-    query = parse_qs(parsed.query)
-    sslmode = query.get('sslmode', ['require'])[0]
-    ssl_context = ssl.create_default_context() if sslmode != 'disable' else None
-
-    return pg8000.native.Connection(
-        user=parsed.username,
-        password=parsed.password,
-        host=parsed.hostname,
-        port=parsed.port or 26257,
-        database=parsed.path.lstrip('/') or 'defaultdb',
-        ssl_context=ssl_context,
-    )
+def get_db_connection():
+    return psycopg2.connect(get_database_url())
 
 
 def save_to_cockroach(user_note, structured_data, vector_embedding):
     conn = get_db_connection()
     try:
-        rows = conn.run(
-            """
-            INSERT INTO diary_entries (
-                user_note, detected_emotion, main_meal, total_spend,
-                main_event, people_involved, weather_condition
-            ) VALUES (:user_note, :detected_emotion, :main_meal, :total_spend,
-                      :main_event, :people_involved, :weather_condition)
-            RETURNING id
-            """,
-            user_note=user_note,
-            detected_emotion=structured_data.get('detected_emotion'),
-            main_meal=structured_data.get('main_meal'),
-            total_spend=structured_data.get('total_spend', 0.00),
-            main_event=structured_data.get('main_event'),
-            people_involved=structured_data.get('people_involved'),
-            weather_condition=structured_data.get('weather_condition'),
-        )
-        entry_id = rows[0][0]
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO diary_entries (
+                    user_note, detected_emotion, main_meal, total_spend,
+                    main_event, people_involved, weather_condition
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    user_note,
+                    structured_data.get('detected_emotion'),
+                    structured_data.get('main_meal'),
+                    structured_data.get('total_spend', 0.00),
+                    structured_data.get('main_event'),
+                    structured_data.get('people_involved'),
+                    structured_data.get('weather_condition'),
+                ),
+            )
+            entry_id = cur.fetchone()[0]
 
-        vector_literal = '[' + ','.join(str(x) for x in vector_embedding) + ']'
-        conn.run(
-            """
-            INSERT INTO life_vector_memory (entry_id, emotional_vector)
-            VALUES (:entry_id, :vector::vector)
-            """,
-            entry_id=entry_id,
-            vector=vector_literal,
-        )
+            vector_literal = '[' + ','.join(str(x) for x in vector_embedding) + ']'
+            cur.execute(
+                """
+                INSERT INTO life_vector_memory (entry_id, emotional_vector)
+                VALUES (%s, %s::vector)
+                """,
+                (entry_id, vector_literal),
+            )
 
+        conn.commit()
         return str(entry_id)
     finally:
         conn.close()
