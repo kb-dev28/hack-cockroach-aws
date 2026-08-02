@@ -76,6 +76,15 @@ def extract_json(text):
     return json.loads(cleaned)
 
 
+# Cosine distance threshold for "similar enough" patterns (0 = identical).
+SIMILARITY_DISTANCE_THRESHOLD = 0.25
+
+
+def _vector_literal(vector_embedding):
+    """Convert a Python list of floats into CockroachDB VECTOR literal text."""
+    return '[' + ','.join(str(x) for x in vector_embedding) + ']'
+
+
 def save_to_cockroach(user_note, structured_data, vector_embedding):
     """
     Persist structured diary fields + embedding in one transaction.
@@ -104,13 +113,12 @@ def save_to_cockroach(user_note, structured_data, vector_embedding):
             )
             entry_id = cur.fetchone()[0]
 
-            vector_literal = '[' + ','.join(str(x) for x in vector_embedding) + ']'
             cur.execute(
                 """
                 INSERT INTO life_vector_memory (entry_id, emotional_vector)
                 VALUES (%s, %s::vector)
                 """,
-                (entry_id, vector_literal),
+                (entry_id, _vector_literal(vector_embedding)),
             )
 
         conn.commit()
@@ -122,8 +130,115 @@ def save_to_cockroach(user_note, structured_data, vector_embedding):
         conn.close()
 
 
+def find_similar_entries(vector_embedding, current_entry_id, limit=3):
+    """
+    Agentic memory recall: find past days with closest emotional meaning.
+    Uses CockroachDB cosine distance operator <=> on the VECTOR index.
+    Lower distance = more similar.
+    """
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    de.id,
+                    de.user_note,
+                    de.detected_emotion,
+                    de.main_meal,
+                    de.total_spend,
+                    de.main_event,
+                    de.people_involved,
+                    de.weather_condition,
+                    de.created_at,
+                    (lvm.emotional_vector <=> %s::vector) AS distance
+                FROM life_vector_memory lvm
+                JOIN diary_entries de ON de.id = lvm.entry_id
+                WHERE lvm.entry_id != %s::uuid
+                ORDER BY distance ASC
+                LIMIT %s
+                """,
+                (
+                    _vector_literal(vector_embedding),
+                    current_entry_id,
+                    limit,
+                ),
+            )
+            rows = cur.fetchall()
+
+        similar = []
+        for row in rows:
+            similar.append({
+                'entry_id': str(row[0]),
+                'user_note': row[1],
+                'detected_emotion': row[2],
+                'main_meal': row[3],
+                'total_spend': float(row[4]) if row[4] is not None else 0.0,
+                'main_event': row[5],
+                'people_involved': row[6],
+                'weather_condition': row[7],
+                'created_at': row[8].isoformat() if row[8] is not None else None,
+                'distance': float(row[9]) if row[9] is not None else None,
+            })
+        return similar
+    finally:
+        conn.close()
+
+
+def build_pattern_insight(current_data, similar_entries):
+    """
+    Turn nearest-neighbor vector hits into an autonomous agent alert.
+    Crosses emotion/meal/spend/people from the closest past day.
+    """
+    if not similar_entries:
+        return {
+            'has_pattern': False,
+            'summary': 'No past diary entries yet. Keep journaling so the agent can detect patterns.',
+            'similar_entries': [],
+            'closest_distance': None,
+        }
+
+    closest = similar_entries[0]
+    distance = closest.get('distance')
+    has_pattern = (
+        distance is not None and distance <= SIMILARITY_DISTANCE_THRESHOLD
+    )
+
+    if has_pattern:
+        summary = (
+            f"Pattern detected: today feels similar to a past day "
+            f"(emotion={closest.get('detected_emotion')}, "
+            f"event={closest.get('main_event')}, "
+            f"people={closest.get('people_involved')}, "
+            f"meal={closest.get('main_meal')}, "
+            f"spend=${closest.get('total_spend')}, "
+            f"weather={closest.get('weather_condition')}). "
+            f"Cosine distance={distance:.4f}."
+        )
+    else:
+        summary = (
+            f"Closest past day found, but not similar enough yet "
+            f"(distance={distance}). Keep journaling to strengthen memory."
+        )
+
+    return {
+        'has_pattern': has_pattern,
+        'summary': summary,
+        'current': {
+            'detected_emotion': current_data.get('detected_emotion'),
+            'main_event': current_data.get('main_event'),
+            'people_involved': current_data.get('people_involved'),
+            'main_meal': current_data.get('main_meal'),
+            'total_spend': current_data.get('total_spend'),
+            'weather_condition': current_data.get('weather_condition'),
+        },
+        'similar_entries': similar_entries,
+        'closest_distance': distance,
+    }
+
+
 def process_diary_note(user_note):
-    """Full pipeline: Claude extract -> Titan embed -> CockroachDB save."""
+    """Full pipeline: Claude extract -> Titan embed -> save -> vector recall."""
     claude_prompt = f"""
 Analyze the following personal diary entry and extract:
 - detected_emotion (Strictly ONE word in English)
@@ -166,11 +281,14 @@ Return ONLY valid JSON with keys:
     vector_embedding = titan_result['embedding']
 
     entry_id = save_to_cockroach(user_note, structured_data, vector_embedding)
+    similar_entries = find_similar_entries(vector_embedding, entry_id, limit=3)
+    pattern_insight = build_pattern_insight(structured_data, similar_entries)
 
     return {
         'entry_id': entry_id,
         'structured_data': structured_data,
         'vector_length': len(vector_embedding),
+        'pattern_insight': pattern_insight,
     }
 
 
@@ -234,7 +352,7 @@ def lambda_handler(event, context):
         result = process_diary_note(user_note)
 
         return _response(200, {
-            'message': 'AI processing and DB save successful',
+            'message': 'AI processing, memory save, and pattern recall successful',
             'database_check': db_check,
             **result,
         })
