@@ -4,22 +4,57 @@ import os
 import boto3
 import psycopg2
 
-# Client created once per Lambda container (warm start reuse).
+# Clients created once per Lambda container (warm start reuse).
 bedrock = boto3.client(service_name='bedrock-runtime', region_name='us-east-1')
+secretsmanager = boto3.client(service_name='secretsmanager', region_name='us-east-1')
 
 CLAUDE_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
 EMBED_MODEL_ID = 'amazon.titan-embed-text-v1'
+DATABASE_SECRET_NAME = 'hack-cockroach-aws/database-url'
+
+# Cached across warm invocations; refreshed only on cold start.
+_CACHED_DATABASE_URL = None
 
 
 def get_database_url():
     """
-    Read CockroachDB connection string from Lambda environment variables.
-    Why: never hardcode passwords in source code / GitHub.
+    Load CockroachDB connection string from AWS Secrets Manager.
+    Cached at module level so Secrets Manager is called on cold start only.
+    PGSSLROOTCERT still comes from a normal Lambda environment variable.
     """
-    url = os.environ.get('DATABASE_URL')
+    global _CACHED_DATABASE_URL
+
+    if _CACHED_DATABASE_URL:
+        return _CACHED_DATABASE_URL
+
+    try:
+        response = secretsmanager.get_secret_value(SecretId=DATABASE_SECRET_NAME)
+    except Exception as e:
+        raise RuntimeError(
+            f'Failed to read secret "{DATABASE_SECRET_NAME}" from Secrets Manager: {e}'
+        ) from e
+
+    secret_string = response.get('SecretString')
+    if not secret_string:
+        raise RuntimeError(
+            f'Secret "{DATABASE_SECRET_NAME}" has no SecretString payload'
+        )
+
+    try:
+        secret_data = json.loads(secret_string)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f'Secret "{DATABASE_SECRET_NAME}" is not valid JSON: {e}'
+        ) from e
+
+    url = secret_data.get('DATABASE_URL')
     if not url:
-        raise ValueError('DATABASE_URL environment variable is not set')
-    return url
+        raise RuntimeError(
+            f'Secret "{DATABASE_SECRET_NAME}" is missing JSON key "DATABASE_URL"'
+        )
+
+    _CACHED_DATABASE_URL = url
+    return _CACHED_DATABASE_URL
 
 
 def get_db_connection():
