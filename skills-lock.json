@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "cockroachdb-sql": {
+      "source": "cockroachlabs/cockroachdb-skills",
+      "sourceType": "github",
+      "skillPath": "skills/cockroachdb-query-and-schema-design/cockroachdb-sql/SKILL.md",
+      "computedHash": "9b5a5d981d6a87240f1f3055075c71dacf274b29b8b9a039cd9dfb3dbcf308e1"
+    }
+  }
+}
