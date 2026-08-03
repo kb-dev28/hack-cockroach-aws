@@ -1,1 +1,1 @@
-{"errorType":"Sandbox.Timedout","errorMessage":"RequestId: fef82683-a664-4508-841e-155c269f4960 Error: Task timed out after 3.00 seconds"}
+{"statusCode": 200, "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}, "body": "{\"message\": \"Database connection successful\", \"database_check\": {\"ok\": 1, \"diary_entries_count\": 3, \"life_vector_memory_count\": 3}}"}
