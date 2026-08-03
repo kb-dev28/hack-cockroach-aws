@@ -75,6 +75,7 @@ Vector search (<=>) → pattern_insight
 - [x] Similarity search (`<=>`) + `pattern_insight` response
 - [x] SSL to CockroachDB Cloud via packaged `root.crt` + `PGSSLROOTCERT`
 - [x] AWS Secrets Manager for `DATABASE_URL` (module-level cache on cold start)
+- [x] Structured CloudWatch JSON logs (`PATTERN_RECALL_SUCCESS`, etc.)
 - [x] Packaging script for Lambda deploy zip
 
 ### Coming next
@@ -312,6 +313,8 @@ aws lambda update-function-code \
 Serverless execution environment for the agent loop:
 
 `note → Secrets Manager → Bedrock extract → Bedrock embed → INSERT → vector recall → insight`
+
+Structured JSON logs go to **CloudWatch** (for example `PATTERN_RECALL_SUCCESS` with `request_id`, `closest_distance`, and `action_triggered`) so judges can verify agent decisions in production traces.
 
 ### Amazon Bedrock
 

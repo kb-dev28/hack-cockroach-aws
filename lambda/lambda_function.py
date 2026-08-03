@@ -1,8 +1,12 @@
 import json
+import logging
 import os
 
 import boto3
 import psycopg2
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 # Clients created once per Lambda container (warm start reuse).
 bedrock = boto3.client(service_name='bedrock-runtime', region_name='us-east-1')
@@ -14,6 +18,14 @@ DATABASE_SECRET_NAME = 'hack-cockroach-aws/database-url'
 
 # Cached across warm invocations; refreshed only on cold start.
 _CACHED_DATABASE_URL = None
+
+
+def log_agent_event(event_name, request_id=None, **fields):
+    """Emit one CloudWatch-friendly JSON log line for agent observability."""
+    payload = {'event': event_name, **fields}
+    if request_id:
+        payload['request_id'] = request_id
+    logger.info(json.dumps(payload, default=str))
 
 
 def get_database_url():
@@ -350,8 +362,10 @@ def lambda_handler(event, context):
 
     2) Full diary pipeline:
        POST {"note": "Today I felt sad..."}
-       -> Bedrock + INSERT into CockroachDB
+       -> Bedrock + INSERT into CockroachDB + vector recall
     """
+    request_id = getattr(context, 'aws_request_id', None)
+
     try:
         # Support both:
         # 1) Direct invoke / console test: {"action":"health"} or {"note":"..."}
@@ -370,6 +384,12 @@ def lambda_handler(event, context):
         # --- Mode 1: prove CockroachDB connectivity without calling Bedrock ---
         if action == 'health':
             db_check = check_database()
+            log_agent_event(
+                'HEALTH_CHECK_SUCCESS',
+                request_id=request_id,
+                diary_entries_count=db_check.get('diary_entries_count'),
+                life_vector_memory_count=db_check.get('life_vector_memory_count'),
+            )
             return _response(200, {
                 'message': 'Database connection successful',
                 'database_check': db_check,
@@ -378,13 +398,34 @@ def lambda_handler(event, context):
         # --- Mode 2: full diary processing ---
         user_note = body.get('note', '')
         if not user_note:
+            log_agent_event(
+                'VALIDATION_ERROR',
+                request_id=request_id,
+                reason='missing_note',
+            )
             return _response(400, {
                 'error': 'Missing required field: "note". Or send {"action":"health"} to test DB.',
             })
 
+        log_agent_event(
+            'DIARY_PROCESS_START',
+            request_id=request_id,
+            note_length=len(user_note),
+        )
+
         # Fail fast if DB is down before spending Bedrock tokens.
         db_check = check_database()
         result = process_diary_note(user_note)
+
+        insight = result.get('pattern_insight') or {}
+        log_agent_event(
+            'PATTERN_RECALL_SUCCESS',
+            request_id=request_id,
+            entry_id=result.get('entry_id'),
+            closest_distance=insight.get('closest_distance'),
+            action_triggered=bool(insight.get('has_pattern')),
+            similar_count=len(insight.get('similar_entries') or []),
+        )
 
         return _response(200, {
             'message': 'AI processing, memory save, and pattern recall successful',
@@ -393,4 +434,9 @@ def lambda_handler(event, context):
         })
 
     except Exception as e:
+        log_agent_event(
+            'AGENT_ERROR',
+            request_id=request_id,
+            error=str(e),
+        )
         return _response(500, {'error': str(e)})
