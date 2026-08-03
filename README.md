@@ -35,6 +35,7 @@ The agent **acts** after every write: it compares the new day to past days and s
 | CockroachDB #2 | **Cloud Managed MCP Server** | Cursor connected to the live cluster for schema inspection and development |
 | AWS #1 | **AWS Lambda** | Serverless backend that orchestrates AI + memory |
 | AWS #2 | **Amazon Bedrock** | Claude Sonnet 4.5 for entity extraction; Titan Embeddings V1 for vectors |
+| AWS (bonus) | **Secrets Manager** | CockroachDB URL stored as secret `hack-cockroach-aws/database-url` (never in code) |
 
 ---
 
@@ -46,13 +47,14 @@ User note (JSON)
       ▼
 AWS Lambda (Python 3.12, arm64)
       │
-      ├── Amazon Bedrock — Claude Sonnet 4.5  → structured JSON
-      ├── Amazon Bedrock — Titan Embed V1    → VECTOR(1536)
+      ├── AWS Secrets Manager     → DATABASE_URL (cold-start cache)
+      ├── Amazon Bedrock Claude  → structured JSON
+      ├── Amazon Bedrock Titan   → VECTOR(1536)
       │
       ▼
-CockroachDB Cloud
-      ├── diary_entries          (transactional facts)
-      └── life_vector_memory     (embeddings + VECTOR INDEX)
+CockroachDB Cloud (TLS via packaged root.crt)
+      ├── diary_entries
+      └── life_vector_memory (+ VECTOR INDEX)
       │
       ▼
 Vector search (<=>) → pattern_insight
@@ -72,6 +74,7 @@ Vector search (<=>) → pattern_insight
 - [x] Transactional INSERT into SQL + vector tables
 - [x] Similarity search (`<=>`) + `pattern_insight` response
 - [x] SSL to CockroachDB Cloud via packaged `root.crt` + `PGSSLROOTCERT`
+- [x] AWS Secrets Manager for `DATABASE_URL` (module-level cache on cold start)
 - [x] Packaging script for Lambda deploy zip
 
 ### Coming next
@@ -238,7 +241,32 @@ This produces `lambda/lambda-deploy.zip` containing:
 - `psycopg2-binary` (manylinux2014 **aarch64** / Python 3.12)
 - `root.crt` (from `cockroach-ca.crt`)
 
-### 4. Configure Lambda
+### 4. Configure secrets + Lambda
+
+Store the CockroachDB URL in **AWS Secrets Manager** (not in source code):
+
+```bash
+aws secretsmanager create-secret \
+  --name hack-cockroach-aws/database-url \
+  --description "CockroachDB connection string for Anima" \
+  --secret-string '{"DATABASE_URL":"postgresql://USER:PASSWORD@HOST:26257/defaultdb?sslmode=verify-full"}'
+```
+
+Grant the Lambda execution role read access:
+
+```bash
+aws iam put-role-policy \
+  --role-name YOUR_LAMBDA_ROLE \
+  --policy-name SecretsManagerReadAnima \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Action": ["secretsmanager:GetSecretValue"],
+      "Resource": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:hack-cockroach-aws/database-url-*"
+    }]
+  }'
+```
 
 | Setting | Value |
 |---|---|
@@ -246,8 +274,8 @@ This produces `lambda/lambda-deploy.zip` containing:
 | Architecture | **arm64** |
 | Handler | `lambda_function.lambda_handler` |
 | Timeout | 30+ seconds |
-| Env `DATABASE_URL` | Cockroach connection string (`sslmode=verify-full`) |
 | Env `PGSSLROOTCERT` | `/var/task/root.crt` |
+| Secret | `hack-cockroach-aws/database-url` → JSON key `DATABASE_URL` |
 
 ### 5. Deploy
 
@@ -283,21 +311,28 @@ aws lambda update-function-code \
 
 Serverless execution environment for the agent loop:
 
-`note → Bedrock extract → Bedrock embed → INSERT → vector recall → insight`
+`note → Secrets Manager → Bedrock extract → Bedrock embed → INSERT → vector recall → insight`
 
 ### Amazon Bedrock
 
 - **Claude Sonnet 4.5** (`us.anthropic.claude-sonnet-4-5-20250929-v1:0`): structured entity extraction
 - **Amazon Titan Text Embeddings V1**: 1536-dim embeddings aligned with `VECTOR(1536)`
 
+### AWS Secrets Manager
+
+- Secret name: `hack-cockroach-aws/database-url`
+- JSON payload: `{ "DATABASE_URL": "postgresql://..." }`
+- Loaded once per cold start and cached in memory for warm invocations
+- Keeps credentials out of source control and Lambda env screenshots
+
 ---
 
 ## Security notes
 
-- Never commit `DATABASE_URL`, passwords, or `.env` files
+- Connection string lives in **Secrets Manager**, not in the repo
+- Never commit passwords, `.env`, or raw connection strings
 - `cockroach-ca.crt` and `*.zip` are gitignored
-- Lambda uses environment variables + packaged CA for TLS (`verify-full`)
-
+- TLS uses packaged CA + `PGSSLROOTCERT=/var/task/root.crt` with `sslmode=verify-full`
 ---
 
 ## Roadmap
