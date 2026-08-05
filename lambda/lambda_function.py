@@ -124,7 +124,7 @@ def extract_json(text):
 
 
 # Cosine distance threshold for "similar enough" patterns (0 = identical).
-SIMILARITY_DISTANCE_THRESHOLD = 0.25
+SIMILARITY_DISTANCE_THRESHOLD = 0.15
 
 
 def _vector_literal(vector_embedding):
