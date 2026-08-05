@@ -33,6 +33,7 @@ The agent **acts** after every write: it compares the new day to past days and s
 |---|---|---|
 | CockroachDB #1 | **Distributed Vector Indexing** | `VECTOR(1536)` + cosine vector index + `<=>` nearest-neighbor recall |
 | CockroachDB #2 | **Cloud Managed MCP Server** | Cursor connected to the live cluster for schema inspection and development |
+| CockroachDB #3 | **Agent Skills Repo** | Local skill `.agents/skills/cockroachdb-sql` (schema design, query patterns, `EXPLAIN` validation against the live cluster) |
 | AWS #1 | **AWS Lambda** | Serverless backend that orchestrates AI + memory |
 | AWS #2 | **Amazon Bedrock** | Claude Sonnet 4.5 for entity extraction; Titan Embeddings V1 for vectors |
 | AWS (bonus) | **Secrets Manager** | CockroachDB URL stored as secret `hack-cockroach-aws/database-url` (never in code) |
@@ -303,6 +304,20 @@ aws lambda update-function-code \
 - Connected to Cursor during development
 - Used to inspect live schema, indexes, and row counts safely
 - Speeds up backend iteration against the real memory layer
+
+### Agent Skills (`cockroachdb-sql`)
+
+The hackathon allows the open-source [CockroachDB Agent Skills](https://github.com/cockroachdb/agent-skills) repo. This project installs the SQL skill under:
+
+```text
+.agents/skills/cockroachdb-sql/
+```
+
+Used during development to:
+
+- Validate schema against CockroachDB rules (UUID PKs, `VECTOR(n)`, `CREATE VECTOR INDEX` + opclass)
+- Align recall queries with documented vector operators (`<=>` + `vector_cosine_ops`)
+- Run live `EXPLAIN` via MCP before changing SQL in Lambda
 
 ---
 
