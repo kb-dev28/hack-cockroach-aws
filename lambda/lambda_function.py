@@ -1,6 +1,5 @@
 import json
 import logging
-import os
 
 import boto3
 import psycopg2
@@ -15,9 +14,18 @@ secretsmanager = boto3.client(service_name='secretsmanager', region_name='us-eas
 CLAUDE_MODEL_ID = 'us.anthropic.claude-sonnet-4-5-20250929-v1:0'
 EMBED_MODEL_ID = 'amazon.titan-embed-text-v1'
 DATABASE_SECRET_NAME = 'hack-cockroach-aws/database-url'
+DEFAULT_USER_ID = 'default_user'
 
 # Cached across warm invocations; refreshed only on cold start.
 _CACHED_DATABASE_URL = None
+
+
+def resolve_user_id(body):
+    """Per-user memory isolation; anonymous clients send user_id from localStorage."""
+    raw = body.get('user_id')
+    if raw is None or str(raw).strip() == '':
+        return DEFAULT_USER_ID
+    return str(raw).strip()[:128]
 
 
 def log_agent_event(event_name, request_id=None, **fields):
@@ -340,7 +348,7 @@ Primary alternative: {suggested_alternative}
     }
 
 
-def save_to_cockroach(user_note, structured_data, vector_embedding):
+def save_to_cockroach(user_note, structured_data, vector_embedding, user_id):
     """
     Persist structured diary fields + embedding in one transaction.
     Why: FK requires diary_entries.id before life_vector_memory.entry_id.
@@ -351,12 +359,13 @@ def save_to_cockroach(user_note, structured_data, vector_embedding):
             cur.execute(
                 """
                 INSERT INTO diary_entries (
-                    user_note, detected_emotion, main_meal, total_spend,
+                    user_id, user_note, detected_emotion, main_meal, total_spend,
                     main_event, people_involved, weather_condition
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
+                    user_id,
                     user_note,
                     structured_data.get('detected_emotion'),
                     structured_data.get('main_meal'),
@@ -370,10 +379,10 @@ def save_to_cockroach(user_note, structured_data, vector_embedding):
 
             cur.execute(
                 """
-                INSERT INTO life_vector_memory (entry_id, emotional_vector)
-                VALUES (%s, %s::vector)
+                INSERT INTO life_vector_memory (user_id, entry_id, emotional_vector)
+                VALUES (%s, %s, %s::vector)
                 """,
-                (entry_id, _vector_literal(vector_embedding)),
+                (user_id, entry_id, _vector_literal(vector_embedding)),
             )
 
         conn.commit()
@@ -385,11 +394,10 @@ def save_to_cockroach(user_note, structured_data, vector_embedding):
         conn.close()
 
 
-def find_similar_entries(vector_embedding, current_entry_id, limit=3):
+def find_similar_entries(vector_embedding, current_entry_id, user_id, limit=3):
     """
-    Agentic memory recall: find past days with closest emotional meaning.
-    Uses CockroachDB cosine distance operator <=> on the VECTOR index.
-    Lower distance = more similar.
+    Agentic memory recall scoped to one user_id.
+    Uses CockroachDB cosine distance (<=>) on emotional_vector.
     """
     conn = get_db_connection()
     try:
@@ -409,12 +417,14 @@ def find_similar_entries(vector_embedding, current_entry_id, limit=3):
                     (lvm.emotional_vector <=> %s::vector) AS distance
                 FROM life_vector_memory lvm
                 JOIN diary_entries de ON de.id = lvm.entry_id
-                WHERE lvm.entry_id != %s::uuid
+                WHERE lvm.user_id = %s
+                  AND lvm.entry_id != %s::uuid
                 ORDER BY distance ASC
                 LIMIT %s
                 """,
                 (
                     _vector_literal(vector_embedding),
+                    user_id,
                     current_entry_id,
                     limit,
                 ),
@@ -494,7 +504,7 @@ def build_pattern_insight(current_data, similar_entries):
     }
 
 
-def process_diary_note(user_note):
+def process_diary_note(user_note, user_id):
     """Full pipeline: Claude extract -> Titan embed -> save -> vector recall."""
     claude_prompt = f"""
 Analyze the following personal diary entry and extract:
@@ -537,11 +547,14 @@ Return ONLY valid JSON with keys:
     titan_result = json.loads(titan_response['body'].read().decode('utf-8'))
     vector_embedding = titan_result['embedding']
 
-    entry_id = save_to_cockroach(user_note, structured_data, vector_embedding)
-    similar_entries = find_similar_entries(vector_embedding, entry_id, limit=3)
+    entry_id = save_to_cockroach(user_note, structured_data, vector_embedding, user_id)
+    similar_entries = find_similar_entries(
+        vector_embedding, entry_id, user_id, limit=3
+    )
     pattern_insight = build_pattern_insight(structured_data, similar_entries)
 
     return {
+        'user_id': user_id,
         'entry_id': entry_id,
         'structured_data': structured_data,
         'vector_length': len(vector_embedding),
@@ -549,16 +562,31 @@ Return ONLY valid JSON with keys:
     }
 
 
-def _response(status_code, payload):
-    """Standard API Gateway / Function URL response shape."""
+def _response(status_code, payload, extra_headers=None):
+    """Standard API Gateway / Function URL response shape with CORS."""
+    headers = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    }
+    if extra_headers:
+        headers.update(extra_headers)
     return {
         'statusCode': status_code,
-        'headers': {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-        },
-        'body': json.dumps(payload),
+        'headers': headers,
+        'body': json.dumps(payload) if payload is not None else '',
     }
+
+
+def _is_options_request(event):
+    if not isinstance(event, dict):
+        return False
+    method = (
+        event.get('requestContext', {}).get('http', {}).get('method')
+        or event.get('httpMethod')
+    )
+    return method == 'OPTIONS'
 
 
 def lambda_handler(event, context):
@@ -571,16 +599,21 @@ def lambda_handler(event, context):
        -> SELECT 1 + COUNT(*) on both tables
 
     2) Full diary pipeline:
-       POST {"note": "Today I felt sad..."}
-       -> Bedrock + INSERT into CockroachDB + vector recall
+       POST {"note": "Today I felt sad...", "user_id": "usr_..."}
+       -> Bedrock + INSERT into CockroachDB + per-user vector recall
     """
     request_id = getattr(context, 'aws_request_id', None)
+
+    if _is_options_request(event):
+        return _response(204, None)
 
     try:
         # Support both:
         # 1) Direct invoke / console test: {"action":"health"} or {"note":"..."}
         # 2) API Gateway / Function URL: {"body":"{\"action\":\"health\"}"}
-        if isinstance(event, dict) and ('action' in event or 'note' in event):
+        if isinstance(event, dict) and (
+            'action' in event or 'note' in event or 'user_id' in event
+        ):
             body = event
         else:
             raw_body = event.get('body', '{}') if isinstance(event, dict) else '{}'
@@ -617,21 +650,25 @@ def lambda_handler(event, context):
                 'error': 'Missing required field: "note". Or send {"action":"health"} to test DB.',
             })
 
+        user_id = resolve_user_id(body)
+
         log_agent_event(
             'DIARY_PROCESS_START',
             request_id=request_id,
             note_length=len(user_note),
+            user_id=user_id,
         )
 
         # Fail fast if DB is down before spending Bedrock tokens.
         db_check = check_database()
-        result = process_diary_note(user_note)
+        result = process_diary_note(user_note, user_id)
 
         insight = result.get('pattern_insight') or {}
         suggestion = insight.get('agent_suggestion') or {}
         log_agent_event(
             'PATTERN_RECALL_SUCCESS',
             request_id=request_id,
+            user_id=user_id,
             entry_id=result.get('entry_id'),
             closest_distance=insight.get('closest_distance'),
             action_triggered=bool(insight.get('has_pattern')),
