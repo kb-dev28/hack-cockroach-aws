@@ -1,4 +1,4 @@
-# Anima — Autonomous Life-Pattern Diary
+# Anima / Synap — Autonomous Life-Pattern Diary
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -84,13 +84,15 @@ Vector search (<=>) → pattern_insight
 - [x] Packaging script for Lambda deploy zip
 - [x] Phase 3.5 proactive agent (`agent_suggestion` when cosine distance &lt; 0.15)
 - [x] MIT open-source license (`LICENSE` + `LICENSE.md`)
+- [x] Synap web UI (`frontend/`) — dark dashboard, anonymous `user_id`, pattern insight panel
+- [x] Multi-user memory isolation (`user_id` in Lambda + SQL migration)
 
 ### Coming next
 
-- [ ] Simple web UI (diary input + insight display)
-- [ ] Metrics panel (`GROUP BY` / `SUM` SQL charts)
-- [ ] Public demo URL
-- [ ] Public GitHub repo + **About → License: MIT** (one click after push)
+- [ ] Run `sql/migration_add_user_id.sql` on CockroachDB (if not applied yet)
+- [ ] Redeploy Lambda with latest `lambda_function.py`
+- [ ] Deploy frontend (Vercel / static host)
+- [ ] Public GitHub repo + **About → License: MIT**
 - [ ] Demo video (&lt; 3 minutes)
 
 ---
@@ -100,13 +102,15 @@ Vector search (<=>) → pattern_insight
 ```text
 hack-cockroach-aws/
 ├── README.md
-├── LICENSE                 # MIT — detected by GitHub About section
-├── LICENSE.md              # Same license (human-readable copy)
+├── LICENSE.md                 # MIT — detected by GitHub About section
 ├── lambda/
 │   ├── lambda_function.py   # Backend agent logic
 │   ├── build_package.sh     # Builds ARM64 deploy zip with psycopg2 + root.crt
 │   └── lambda-deploy.zip    # Generated artifact (gitignored)
-├── cockroach-ca.crt         # Local CA download (gitignored; packed as root.crt)
+├── frontend/
+│   └── app/page.tsx         # Synap dashboard (Next.js + Tailwind)
+├── sql/
+│   └── migration_add_user_id.sql
 └── docs/
     └── internal/            # Private notes (gitignored)
 ```
