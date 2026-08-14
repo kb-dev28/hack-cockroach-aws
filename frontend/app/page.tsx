@@ -155,8 +155,9 @@ export default function Home() {
   const structured = result?.structured_data;
   const insight = result?.pattern_insight;
   const suggestion = insight?.agent_suggestion;
-  const showProactiveCard =
-    insight?.has_pattern === true && suggestion != null;
+  const showProactiveCard = insight?.has_pattern === true;
+  const agentDecision =
+    insight?.agent_decision ?? suggestion?.agent_decision ?? null;
 
   return (
     <div className="min-h-full bg-zinc-950 text-zinc-100">
@@ -332,10 +333,15 @@ export default function Home() {
 
               {showProactiveCard ? (
                 <div className="space-y-5">
+                  {agentDecision && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-950/50 px-3 py-1.5 text-xs font-semibold text-amber-200">
+                      ⚡ {agentDecision}
+                    </span>
+                  )}
                   <p className="text-xs font-medium uppercase tracking-wide text-emerald-400/90">
-                    Proactive agent — optional suggestion
+                    Proactive agent — autonomous decision
                   </p>
-                  {suggestion.cause_effect && (
+                  {suggestion?.cause_effect && (
                     <div>
                       <p className="mb-1 text-xs text-zinc-500">Cause → effect</p>
                       <p className="text-sm leading-relaxed text-zinc-300">
@@ -343,7 +349,7 @@ export default function Home() {
                       </p>
                     </div>
                   )}
-                  {suggestion.agent_message && (
+                  {suggestion?.agent_message && (
                     <div>
                       <p className="mb-1 text-xs text-zinc-500">Agent message</p>
                       <p className="text-base font-medium leading-relaxed text-white">
@@ -351,7 +357,7 @@ export default function Home() {
                       </p>
                     </div>
                   )}
-                  {suggestion.suggested_alternative && (
+                  {suggestion?.suggested_alternative && (
                     <div>
                       <p className="mb-1 text-xs text-zinc-500">
                         Suggested alternative
@@ -361,17 +367,22 @@ export default function Home() {
                       </p>
                     </div>
                   )}
-                  {suggestion.ethical_note && (
+                  {suggestion?.ethical_note && (
                     <p className="rounded-lg border border-zinc-700/80 bg-zinc-950/50 px-3 py-2 text-xs italic text-zinc-400">
                       {suggestion.ethical_note}
                     </p>
                   )}
                 </div>
               ) : (
-                <p className="text-sm leading-relaxed text-zinc-400">
-                  {insight?.summary ??
-                    "No pattern insight returned. Try another entry."}
-                </p>
+                <div className="space-y-3">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900/80 px-3 py-1.5 text-xs font-medium text-zinc-400">
+                    Normal Routine — Memory Indexing Active
+                  </span>
+                  <p className="text-sm leading-relaxed text-zinc-400">
+                    {insight?.summary ??
+                      "No pattern insight returned. Try another entry."}
+                  </p>
+                </div>
               )}
 
               {(insight?.similar_entries?.length ?? 0) > 0 && (

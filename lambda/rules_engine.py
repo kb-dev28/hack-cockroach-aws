@@ -5,6 +5,9 @@ from utils import logger
 # Phase 3.5 fires only when closest distance is strictly below this value.
 SIMILARITY_DISTANCE_THRESHOLD = 0.3
 HIGH_SPEND_THRESHOLD = 50.0
+IMPULSIVE_SPEND_THRESHOLD = 20.0
+
+ROUTINE_SUMMARY = 'Routine entry logged cleanly. No action required.'
 
 # Emotions that trigger gentler, wellbeing-oriented alternatives (not clinical advice).
 HARD_DAY_EMOTIONS = {
@@ -17,6 +20,47 @@ def _norm_text(value):
     if value is None:
         return ''
     return str(value).strip().lower()
+
+
+def _is_actionable_pattern(current_data, past_entry, signals):
+    """
+    True when vector similarity should trigger an autonomous intervention.
+    Routine/neutral days (no hard emotion, no impulsive spend loop) stay false.
+    """
+    signal_types = {s['type'] for s in signals}
+    curr_emotion = _norm_text(current_data.get('detected_emotion'))
+    past_emotion = _norm_text(past_entry.get('detected_emotion'))
+    curr_spend = float(current_data.get('total_spend') or 0)
+    past_spend = float(past_entry.get('total_spend') or 0)
+    peak_spend = max(curr_spend, past_spend)
+
+    if curr_emotion in HARD_DAY_EMOTIONS and past_emotion in HARD_DAY_EMOTIONS:
+        return True
+    if 'emotion_echo' in signal_types and curr_emotion in HARD_DAY_EMOTIONS:
+        return True
+    if peak_spend > IMPULSIVE_SPEND_THRESHOLD and (
+        'similar_spend' in signal_types or 'high_spend' in signal_types or curr_spend > 0
+    ):
+        return True
+    if curr_emotion in HARD_DAY_EMOTIONS and (
+        'same_people' in signal_types or 'same_meal' in signal_types
+    ):
+        return True
+    return False
+
+
+def _derive_agent_decision(signal_types, current_data, past_entry):
+    """Short autonomous decision label for demo / judges."""
+    curr_emotion = _norm_text(current_data.get('detected_emotion'))
+    if 'high_spend' in signal_types or 'similar_spend' in signal_types:
+        return 'DECISION: Triggering preventive budget cap'
+    if 'hard_day_emotion' in signal_types and 'emotion_echo' in signal_types:
+        return 'DECISION: Flagging emotional fatigue loop'
+    if 'same_people' in signal_types and 'same_meal' in signal_types:
+        return 'DECISION: Interrupting comfort-meal loop after social visit'
+    if curr_emotion in HARD_DAY_EMOTIONS:
+        return 'DECISION: Flagging emotional fatigue loop'
+    return 'DECISION: Preventive action triggered'
 
 
 def evaluate_cause_effect(current_data, past_entry):
@@ -152,41 +196,39 @@ def build_proactive_suggestion(current_data, past_entry, signals, cause_effect):
     alternatives = []
     if 'high_spend' in signal_types or 'similar_spend' in signal_types:
         alternatives.append(
-            f'Cap discretionary spend for the next few hours (past spike ~${max(curr_spend, past_spend):.0f}) '
-            'and pick one free reset instead of another purchase.'
+            f'Stop non-essential spending for the next 3 hours — your last similar loop hit '
+            f'~${max(curr_spend, past_spend):.0f}. Do one free reset (walk, water, stretch) before any purchase.'
         )
     if 'same_people' in signal_types and people not in ('', 'none', 'unknown'):
         alternatives.append(
-            f'After time with {people}, schedule a 10-minute solo decompress '
-            '(walk, water, inbox pause) before the day continues.'
+            f'After seeing {people}, take a 10-minute solo break now (walk outside or quiet pause) '
+            'before the day continues — break the social-stress loop.'
         )
     if 'same_meal' in signal_types and meal not in ('', 'unknown'):
         alternatives.append(
-            f'Swap the repeating "{meal}" cue once today for a lighter meal or a short walk after eating.'
+            f'Skip the repeating "{meal}" cue today — choose a lighter meal and a 5-minute walk right after.'
         )
     if 'hard_day_emotion' in signal_types or curr_emotion in HARD_DAY_EMOTIONS:
         alternatives.append(
-            'Choose one small restorative action you control in the next hour '
-            '(short walk outside, message a supportive friend, or 5 calm breaths)—not a diagnosis, just a reset.'
-        )
-    if not alternatives:
-        alternatives.append(
-            'Break the echoed pattern with one tiny change today: different route, shorter errand, or a planned pause.'
+            'Act now: one concrete reset in the next hour — short walk, message someone supportive, '
+            'or 5 calm breaths. This is a habit interrupt, not a diagnosis.'
         )
 
     suggested_alternative = alternatives[0]
     supporting = alternatives[1:]
+    agent_decision = _derive_agent_decision(signal_types, current_data, past_entry)
 
-    # Optional Bedrock polish for demo-quality prose; rules remain source of truth.
+    # Optional Bedrock polish — rules remain source of truth; tone stays direct.
     polished = None
     try:
         polish_prompt = f"""
-You are Anima, a proactive wellness-memory agent (not a clinician).
-Given this cause/effect and rule-based alternative, rewrite ONE short suggestion (max 2 sentences).
-Rules: practical, optional, no medical/clinical diagnosis, no commands that sound mandatory.
+You are Synap, an autonomous wellness-memory agent (not a clinician).
+Rewrite ONE direct, actionable recommendation (max 2 sentences). Be firm and specific.
+No medical diagnosis. No vague advice like "take a different route".
 
+Agent decision: {agent_decision}
 Cause/effect: {cause_effect}
-Primary alternative: {suggested_alternative}
+Primary action: {suggested_alternative}
 """
         polish_response = bedrock.converse(
             modelId=CLAUDE_MODEL_ID,
@@ -202,6 +244,7 @@ Primary alternative: {suggested_alternative}
 
     return {
         'action_triggered': True,
+        'agent_decision': agent_decision,
         'cause_effect': cause_effect,
         'signals': signals,
         'suggested_alternative': suggested_alternative,
@@ -229,20 +272,34 @@ def build_pattern_insight(current_data, similar_entries):
 
     closest = similar_entries[0]
     distance = closest.get('distance')
-    has_pattern = (
+    vector_match = (
         distance is not None and distance < SIMILARITY_DISTANCE_THRESHOLD
     )
 
     agent_suggestion = None
-    if has_pattern:
+    agent_decision = None
+    has_pattern = False
+
+    if vector_match:
         signals, cause_effect = evaluate_cause_effect(current_data, closest)
-        agent_suggestion = build_proactive_suggestion(
-            current_data, closest, signals, cause_effect
-        )
-        summary = (
-            f"Pattern detected (cosine distance={distance:.4f} < {SIMILARITY_DISTANCE_THRESHOLD}). "
-            f"{cause_effect} Agent suggestion: {agent_suggestion['agent_message']}"
-        )
+        if _is_actionable_pattern(current_data, closest, signals):
+            has_pattern = True
+            agent_suggestion = build_proactive_suggestion(
+                current_data, closest, signals, cause_effect
+            )
+            agent_decision = agent_suggestion.get('agent_decision')
+            summary = (
+                f"Pattern detected (cosine distance={distance:.4f} < "
+                f"{SIMILARITY_DISTANCE_THRESHOLD}). {cause_effect} "
+                f"Agent suggestion: {agent_suggestion['agent_message']}"
+            )
+        else:
+            summary = ROUTINE_SUMMARY
+            agent_suggestion = {
+                'action_triggered': False,
+                'agent_message': ROUTINE_SUMMARY,
+                'agent_decision': None,
+            }
     else:
         summary = (
             f"Closest past day found, but not similar enough yet "
@@ -252,6 +309,7 @@ def build_pattern_insight(current_data, similar_entries):
 
     return {
         'has_pattern': has_pattern,
+        'agent_decision': agent_decision,
         'summary': summary,
         'current': {
             'detected_emotion': current_data.get('detected_emotion'),

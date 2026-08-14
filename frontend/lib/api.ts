@@ -33,6 +33,7 @@ export type PatternSignal = {
 
 export type AgentSuggestion = {
   action_triggered?: boolean;
+  agent_decision?: string | null;
   cause_effect?: string;
   signals?: PatternSignal[];
   suggested_alternative?: string;
@@ -56,6 +57,7 @@ export type SimilarEntry = {
 
 export type PatternInsight = {
   has_pattern?: boolean;
+  agent_decision?: string | null;
   summary?: string;
   current?: StructuredData;
   similar_entries?: SimilarEntry[];

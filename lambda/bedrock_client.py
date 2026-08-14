@@ -37,7 +37,7 @@ def process_diary_note(user_note, user_id):
 
     claude_prompt = f"""
 Analyze the following personal diary entry and extract:
-- detected_emotion (Strictly ONE word in English)
+- detected_emotion (Strictly ONE word in English; use neutral/calm/fine for routine entries without strong emotional weight)
 - main_meal (Primary food mentioned, or "unknown")
 - total_spend (Number only. If none, return 0.00)
 - main_event (Main activity, max 5 words. "unknown" if none)
