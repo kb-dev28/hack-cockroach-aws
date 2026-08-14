@@ -1,6 +1,10 @@
 # Anima — Autonomous Life-Pattern Diary
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **Anima** is an agentic wellness diary for the [CockroachDB × AWS Hackathon — Build with Agentic Memory](https://devpost.com).
+
+> **Open source:** this repository is published under the [MIT License](LICENSE). After pushing to GitHub, set **About → License → MIT** so judges can see it on the repository home page.
 
 It does more than store text. When you write a free-form diary note, Anima:
 
@@ -78,13 +82,15 @@ Vector search (<=>) → pattern_insight
 - [x] AWS Secrets Manager for `DATABASE_URL` (module-level cache on cold start)
 - [x] Structured CloudWatch JSON logs (`PATTERN_RECALL_SUCCESS`, etc.)
 - [x] Packaging script for Lambda deploy zip
+- [x] Phase 3.5 proactive agent (`agent_suggestion` when cosine distance &lt; 0.15)
+- [x] MIT open-source license (`LICENSE` + `LICENSE.md`)
 
 ### Coming next
 
 - [ ] Simple web UI (diary input + insight display)
 - [ ] Metrics panel (`GROUP BY` / `SUM` SQL charts)
 - [ ] Public demo URL
-- [ ] README polish / MIT license visibility
+- [ ] Public GitHub repo + **About → License: MIT** (one click after push)
 - [ ] Demo video (&lt; 3 minutes)
 
 ---
@@ -94,7 +100,8 @@ Vector search (<=>) → pattern_insight
 ```text
 hack-cockroach-aws/
 ├── README.md
-├── LICENSE.md
+├── LICENSE                 # MIT — detected by GitHub About section
+├── LICENSE.md              # Same license (human-readable copy)
 ├── lambda/
 │   ├── lambda_function.py   # Backend agent logic
 │   ├── build_package.sh     # Builds ARM64 deploy zip with psycopg2 + root.crt
@@ -182,14 +189,19 @@ Example success fields:
   "vector_length": 1536,
   "pattern_insight": {
     "has_pattern": true,
-    "summary": "Pattern detected: today feels similar to a past day...",
-    "similar_entries": [],
-    "closest_distance": 0.12
+    "summary": "Pattern detected (cosine distance=0.04 < 0.15)...",
+    "closest_distance": 0.04,
+    "agent_suggestion": {
+      "action_triggered": true,
+      "cause_effect": "When interaction involving mom + meal cue pizza showed up before...",
+      "agent_message": "Cap discretionary spend for the next few hours...",
+      "ethical_note": "Suggestion only — not a diagnosis."
+    }
   }
 }
 ```
 
-> Tip: send **two similar notes**. The first creates memory; the second should return `has_pattern: true`.
+> Tip: send **two similar notes**. The first creates memory; the second should return `has_pattern: true` and `agent_suggestion`.
 
 ---
 
@@ -364,10 +376,18 @@ Structured JSON logs go to **CloudWatch** (for example `PATTERN_RECALL_SUCCESS` 
 
 ## License
 
-See `LICENSE.md` (MIT recommended for Devpost open-source submissions).
+This project is licensed under the **MIT License** — see [LICENSE](LICENSE) (canonical file for GitHub detection) and [LICENSE.md](LICENSE.md).
+
+Devpost requires a **public open-source repository** with a detectable license. This repo includes:
+
+| Requirement | How Anima satisfies it |
+|---|---|
+| License file | `LICENSE` at repository root (MIT) |
+| Visible on GitHub | Push the repo, then **Settings → General → Features** or edit **About → License → MIT** |
+| Judges can run it | README setup steps, schema SQL, Lambda build script |
 
 ---
 
 ## Author
 
-Built for the **CockroachDB × AWS Hackathon** as a production-minded agentic memory demo focused on personal wellness patterns.
+Built for the **CockroachDB × AWS Hackathon** by **karm-bit28** — a production-minded agentic memory demo focused on personal wellness patterns.

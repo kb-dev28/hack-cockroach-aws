@@ -1,1 +1,0 @@
-{"statusCode": 200, "headers": {"Content-Type": "application/json", "Access-Control-Allow-Origin": "*"}, "body": "{\"message\": \"Database connection successful\", \"database_check\": {\"ok\": 1, \"diary_entries_count\": 3, \"life_vector_memory_count\": 3}}"}
