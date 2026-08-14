@@ -48,8 +48,12 @@ pip install \
   --only-binary=:all: \
   psycopg2-binary
 
-echo "==> Copying lambda_function.py"
+echo "==> Copying Lambda application modules"
 cp "${SCRIPT_DIR}/lambda_function.py" "${BUILD_DIR}/lambda_function.py"
+cp "${SCRIPT_DIR}/utils.py" "${BUILD_DIR}/utils.py"
+cp "${SCRIPT_DIR}/db.py" "${BUILD_DIR}/db.py"
+cp "${SCRIPT_DIR}/bedrock_client.py" "${BUILD_DIR}/bedrock_client.py"
+cp "${SCRIPT_DIR}/rules_engine.py" "${BUILD_DIR}/rules_engine.py"
 
 echo "==> Copying Cockroach CA as ${CA_DST_NAME} (Lambda path: /var/task/${CA_DST_NAME})"
 cp "${CA_SRC}" "${BUILD_DIR}/${CA_DST_NAME}"
@@ -67,17 +71,25 @@ with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
     for path in build_dir.rglob("*"):
         if path.is_file():
             # Write relative to package/ so zip root contains:
-            #   lambda_function.py
+            #   lambda_function.py, utils.py, db.py, bedrock_client.py, rules_engine.py
             #   root.crt
             #   psycopg2/
             #   ...
             zf.write(path, path.relative_to(build_dir).as_posix())
 
 names = zipfile.ZipFile(zip_path).namelist()
-assert "root.crt" in names, "root.crt missing from zip root"
-assert "lambda_function.py" in names, "lambda_function.py missing from zip root"
+required = (
+    "root.crt",
+    "lambda_function.py",
+    "utils.py",
+    "db.py",
+    "bedrock_client.py",
+    "rules_engine.py",
+)
+for item in required:
+    assert item in names, f"{item} missing from zip root"
 print(f"Wrote {zip_path} ({zip_path.stat().st_size / 1024:.1f} KB)")
-print(f"Confirmed zip contains root.crt at package root")
+print("Confirmed zip contains all Lambda modules + root.crt at package root")
 PY
 
 echo "==> Cleaning temporary package/ folder"
