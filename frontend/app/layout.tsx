@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Synap — Autonomous Agentic Memory",
   description:
-    "Pattern detection diary powered by CockroachDB vector search and AWS Bedrock.",
+    "Diary pattern detection with CockroachDB vector memory and AWS Bedrock.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
