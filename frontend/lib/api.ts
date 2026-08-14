@@ -1,6 +1,7 @@
 /** Lambda Function URL — matches lambda/utils.py DEFAULT_USER_ID fallback on server. */
 export const LAMBDA_URL =
   "https://dpchzhzc7xvmdvqsgzn4irzqau0auolr.lambda-url.us-east-1.on.aws/";
+  
 
 export const USER_ID_STORAGE_KEY = "synap_user_id";
 

@@ -4,17 +4,6 @@ from bedrock_client import process_diary_note
 from db import check_database
 from utils import _response, log_agent_event, resolve_user_id
 
-
-def _is_options_request(event):
-    if not isinstance(event, dict):
-        return False
-    method = (
-        event.get('requestContext', {}).get('http', {}).get('method')
-        or event.get('httpMethod')
-    )
-    return method == 'OPTIONS'
-
-
 def lambda_handler(event, context):
     """
     AWS Lambda entrypoint.
@@ -29,9 +18,6 @@ def lambda_handler(event, context):
        -> Bedrock + INSERT into CockroachDB + per-user vector recall
     """
     request_id = getattr(context, 'aws_request_id', None)
-
-    if _is_options_request(event):
-        return _response(204, None)
 
     try:
         # Support both:

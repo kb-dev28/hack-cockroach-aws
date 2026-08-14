@@ -25,12 +25,12 @@ def log_agent_event(event_name, request_id=None, **fields):
 
 
 def _response(status_code, payload, extra_headers=None):
-    """Standard API Gateway / Function URL response shape with CORS."""
+    """Standard API Gateway / Function URL response shape.
+    CORS headers are handled by the Function URL config (AWS injects them
+    automatically) — adding them here too causes duplicate headers.
+    """
     headers = {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
     }
     if extra_headers:
         headers.update(extra_headers)
