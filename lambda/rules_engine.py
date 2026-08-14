@@ -3,7 +3,7 @@ from utils import logger
 
 # Cosine distance threshold for "similar enough" patterns (0 = identical).
 # Phase 3.5 fires only when closest distance is strictly below this value.
-SIMILARITY_DISTANCE_THRESHOLD = 0.15
+SIMILARITY_DISTANCE_THRESHOLD = 0.3
 HIGH_SPEND_THRESHOLD = 50.0
 
 # Emotions that trigger gentler, wellbeing-oriented alternatives (not clinical advice).
