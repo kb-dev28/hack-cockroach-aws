@@ -1,4 +1,4 @@
-# Anima / Synap — Autonomous Life-Pattern Diary
+# Anima — Autonomous Life-Pattern Diary
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -84,7 +84,7 @@ Vector search (<=>) → pattern_insight
 - [x] Packaging script for Lambda deploy zip
 - [x] Phase 3.5 proactive agent (`agent_suggestion` when cosine distance &lt; 0.15)
 - [x] MIT open-source license (`LICENSE` + `LICENSE.md`)
-- [x] Synap web UI (`frontend/`) — dark dashboard, anonymous `user_id`, pattern insight panel
+- [x] Anima web UI (`frontend/`) — dark dashboard, anonymous `user_id`, pattern insight panel
 - [x] Multi-user memory isolation (`user_id` in Lambda + SQL migration)
 
 ### Coming next
@@ -108,7 +108,7 @@ hack-cockroach-aws/
 │   ├── build_package.sh     # Builds ARM64 deploy zip with psycopg2 + root.crt
 │   └── lambda-deploy.zip    # Generated artifact (gitignored)
 ├── frontend/
-│   └── app/page.tsx         # Synap dashboard (Next.js + Tailwind)
+│   └── app/page.tsx         # Anima dashboard (Next.js + Tailwind)
 ├── sql/
 │   └── migration_add_user_id.sql
 └── docs/
