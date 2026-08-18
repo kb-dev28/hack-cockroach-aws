@@ -1,8 +1,11 @@
 @import "tailwindcss";
 
 :root {
-  --background: #09090b;
-  --foreground: #fafafa;
+  --background: #070709;
+  --foreground: #f4f4f5;
+  --surface: rgba(24, 24, 27, 0.72);
+  --accent: #2dd4bf;
+  --accent-muted: rgba(45, 212, 191, 0.12);
 }
 
 @theme inline {
@@ -16,4 +19,64 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(45, 212, 191, 0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.45s ease-out both;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.35s ease-out both;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2.5s ease-in-out infinite;
+}
+
+.glass-panel {
+  background: linear-gradient(
+    145deg,
+    rgba(24, 24, 27, 0.85) 0%,
+    rgba(15, 15, 18, 0.65) 100%
+  );
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.hero-glow {
+  background: radial-gradient(
+    ellipse 80% 50% at 50% -20%,
+    rgba(45, 212, 191, 0.08),
+    transparent 70%
+  );
 }
