@@ -93,7 +93,7 @@ The agent combines the vector similarity with structured SQL signals.
 The current proactive threshold is:
 
 ```text
-cosine distance < 0.15
+cosine distance < 0.3
 ```
 
 ### 6. Act
@@ -192,6 +192,16 @@ It was used to:
 * Validate `VECTOR(n)` and vector index patterns.
 * Align vector recall queries with `<=>` and `vector_cosine_ops`.
 * Validate SQL behavior against the live CockroachDB cluster.
+
+#### 4. ccloud CLI
+
+The ccloud CLI was used during development to interact with and inspect the CockroachDB Cloud environment from the terminal.
+
+It was used to:
+
+* Inspect and manage the CockroachDB Cloud environment.
+* Test database and schema operations.
+* Verify the development cluster configuration.
 
 ---
 

@@ -35,3 +35,4 @@ venv/
 
 # Internal notes (optional: keep if you want them private)
 docs/internal/
+cockroach-v25.4.0.linux-amd64/
