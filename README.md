@@ -6,6 +6,7 @@
 
 ## Try Anima
 
+* **Video Pitch:** https://www.youtube.com/watch?v=tOJ5U_pKCNc
 * **Live Demo:** https://hack-cockroach-aws.vercel.app
 * **GitHub:** https://github.com/kb-dev28/hack-cockroach-aws
 
